@@ -1,0 +1,4 @@
+/.coverage
+/.eggs
+/theseus/_version.py
+/version.txt
