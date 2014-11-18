@@ -1,4 +1,5 @@
 import collections
+import inspect
 import sys
 
 from twisted.internet import defer
@@ -19,12 +20,28 @@ class Function(collections.namedtuple('Function', ['filename', 'func'])):
         return cls(frame.f_code.co_filename, frame.f_code.co_name)
 
 
+class FakeFrame(object):
+    def __init__(self, code, back):
+        self.f_code = code
+        self.f_back = back
+
+
 class Tracer(object):
+    """
+    A tracer for Deferred-returning functions.
+
+    The general idea is that if a function returns a Deferred, said Deferred
+    will have a callback attached to it for timing how long it takes before the
+    Deferred fires. Then, that time is recorded along with the function and all
+    of its callers.
+    """
+
     def __init__(self, reactor=None):
         if reactor is None:
             from twisted.internet import reactor
         self._reactor = reactor
         self._deferreds = {}
+        self._unwindGenerator_frames = set()
         self._function_data = {}
 
     def _trace(self, frame, event, arg):
@@ -36,12 +53,37 @@ class Tracer(object):
             return self._trace
 
     def _event_call(self, frame, arg):
-        if frame.f_globals.get('__name__') == 'twisted.internet.defer':
+        # Don't trace generators; inlineCallbacks is handled separately.
+        if frame.f_code.co_flags & inspect.CO_GENERATOR:
             return IGNORE
+
+        # Tracing functions from twisted.internet.defer adds a lot of noise, so
+        # don't do that.
+        if frame.f_globals.get('__name__') == 'twisted.internet.defer':
+            # The only exception to the above is unwindGenerator, an
+            # implementation detail of inlineCallbacks.
+            if frame.f_code.co_name == 'unwindGenerator':
+                self._unwindGenerator_frames.add(frame)
+            else:
+                return IGNORE
 
     def _event_return(self, frame, arg):
         if not isinstance(arg, defer.Deferred):
             return
+        # Detect when unwindGenerator returns. unwindGenerator is part of the
+        # inlineCallbacks implementation. If unwindGenerator is returning, it
+        # means that the Deferred being returned is the Deferred that will be
+        # returned from the wrapped function. Yank the wrapped function out and
+        # fake a call stack that makes it look like unwindGenerator isn't
+        # involved at all and the wrapped function is being called
+        # directly. This /does/ involve Twisted implementation details, but as
+        # far back as twisted 2.5.0 (when inlineCallbacks was introduced), the
+        # name 'unwindGenerator' and the local 'f' are the same. If this ever
+        # changes in the future, I'll have to update this code.
+        if frame in self._unwindGenerator_frames:
+            self._unwindGenerator_frames.remove(frame)
+            wrapped_func = frame.f_locals['f']
+            frame = FakeFrame(wrapped_func.func_code, frame.f_back)
         key = frame, arg
         self._deferreds[key] = DeferredStatus(
             frame, arg, self._reactor.seconds())
@@ -82,9 +124,22 @@ class Tracer(object):
             frame = caller
 
     def install(self):
+        """
+        Install this tracer as a global `trace hook
+        <https://docs.python.org/2/library/sys.html#sys.settrace>`_.
+
+        The old trace hook, if one is set, will be discarded.
+        """
         sys.settrace(self._trace)
 
     def write_data(self, fobj):
+        """
+        Write profiling data in `callgrind format
+        <http://valgrind.org/docs/manual/cl-format.html>`_ to an open file
+        object.
+
+        The file object will not be closed.
+        """
         fobj.write('events: Nanoseconds\n')
         for func, data in sorted(self._function_data.iteritems()):
             fobj.write('fn={0.func} {0.filename}\n'.format(func))

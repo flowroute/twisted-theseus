@@ -1,4 +1,5 @@
 from cStringIO import StringIO
+import inspect
 import textwrap
 
 from twisted.internet import defer, task
@@ -6,17 +7,24 @@ from twisted.internet import defer, task
 from theseus._tracer import Function, Tracer
 
 
+class FakeCode(object):
+    def __init__(self, filename='', name='', flags=0):
+        self.co_filename = filename
+        self.co_name = name
+        self.co_flags = flags
+
+
 class FakeFrame(object):
-    def __init__(self, code=None, back=None, globals={}):
+    def __init__(self, code=FakeCode(), back=None, globals={}, locals={}):
         self.f_code = code
         self.f_back = back
         self.f_globals = globals
+        self.f_locals = locals
 
 
-class FakeCode(object):
-    def __init__(self, filename, name):
-        self.co_filename = filename
-        self.co_name = name
+class FakeFunction(object):
+    def __init__(self, code=FakeCode()):
+        self.func_code = code
 
 
 def test_function_of_frame():
@@ -43,6 +51,15 @@ def test_trace_unknown_events():
     assert t._trace(FakeFrame(), 'unknown', None) == t._trace
 
 
+def test_ignore_generators():
+    """
+    A Tracer won't step into a generator function.
+    """
+    frame = FakeFrame(FakeCode(flags=inspect.CO_GENERATOR))
+    t = Tracer()
+    assert t._trace(frame, 'call', None) is None
+
+
 def test_ignore_defer():
     """
     A Tracer won't step into a function defined in twisted.internet.defer.
@@ -50,6 +67,18 @@ def test_ignore_defer():
     frame = FakeFrame(globals={'__name__': 'twisted.internet.defer'})
     t = Tracer()
     assert t._trace(frame, 'call', None) is None
+
+
+def test_trace_unwindGenerator():
+    """
+    The exception to ingoring twisted.internet.defer functions is if the
+    function's name is unwindGenerator.
+    """
+    frame = FakeFrame(
+        FakeCode(name='unwindGenerator'),
+        globals={'__name__': 'twisted.internet.defer'})
+    t = Tracer()
+    assert t._trace(frame, 'call', None) == t._trace
 
 
 def test_do_not_trace_non_deferred_returns():
@@ -64,6 +93,11 @@ def test_do_not_trace_non_deferred_returns():
 
 _frame_spam = FakeFrame(FakeCode('spam.py', 'spam'))
 _frame_eggs = FakeFrame(FakeCode('eggs.py', 'eggs'), _frame_spam)
+_frame_unwindGenerator = FakeFrame(
+    FakeCode('defer.py', 'unwindGenerator'),
+    _frame_eggs,
+    {'__name__': 'twisted.internet.defer'},
+    {'f': FakeFunction(FakeCode('sausage.py', 'sausage'))})
 
 
 def test_trace_deferred_return_initial_setup():
@@ -82,6 +116,7 @@ def _trace_deferred_firing_after(clock, tracer, frame, seconds):
     Helper function to advance a clock and fire a Deferred.
     """
     d = defer.Deferred()
+    tracer._trace(frame, 'call', None)
     tracer._trace(frame, 'return', d)
     clock.advance(seconds)
     d.callback(None)
@@ -132,6 +167,25 @@ def test_trace_deferred_return_with_multiple_calls():
             ('eggs.py', 'eggs'): (1, 125000),
         }, 750000),
         ('eggs.py', 'eggs'): ({}, 125000),
+    }
+
+
+def test_trace_inlineCallbacks_detection():
+    """
+    Tracer will detect the use of inlineCallbacks and rewrite the call stacks
+    to look better and contain more information.
+    """
+    clock = task.Clock()
+    t = Tracer(reactor=clock)
+    _trace_deferred_firing_after(clock, t, _frame_unwindGenerator, 0.5)
+    assert t._function_data == {
+        ('spam.py', 'spam'): ({
+            ('eggs.py', 'eggs'): (1, 500000),
+        }, 0),
+        ('eggs.py', 'eggs'): ({
+            ('sausage.py', 'sausage'): (1, 500000),
+        }, 0),
+        ('sausage.py', 'sausage'): ({}, 500000),
     }
 
 
