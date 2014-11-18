@@ -1,3 +1,6 @@
+.. image:: https://travis-ci.org/habnabit/twisted-theseus.png
+
+
 =================
  twisted-theseus
 =================
