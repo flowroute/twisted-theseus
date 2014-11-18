@@ -31,7 +31,7 @@ setup(
     vcversioner={
         'version_module_paths': ['theseus/_version.py'],
     },
-    packages=['theseus'],
+    packages=['theseus', 'theseus.test'],
     setup_requires=['vcversioner'],
     install_requires=['Twisted'],
     zip_safe=False,

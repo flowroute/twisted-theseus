@@ -1,4 +1,7 @@
 /.coverage
 /.eggs
+/.tox
 /theseus/_version.py
 /version.txt
+/htmlcov*
+*.egg
