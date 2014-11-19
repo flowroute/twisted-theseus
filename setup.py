@@ -10,11 +10,11 @@ with open('README.rst', 'r') as infile:
 
 setup(
     name='twisted-theseus',
-    description='a Deferred profiler',
+    description='a Deferred-aware profiler for Twisted',
     long_description=long_description,
     author='Aaron Gallagher',
     author_email='_@habnab.it',
-    url='https://github.com/habnabit/twisted-theseus',
+    url='https://github.com/flowroute/twisted-theseus',
     classifiers=[
         'Development Status :: 2 - Pre-Alpha',
         'Framework :: Twisted',
