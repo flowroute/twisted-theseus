@@ -1,4 +1,4 @@
-.. image:: https://travis-ci.org/habnabit/twisted-theseus.png
+.. image:: https://travis-ci.org/flowroute/twisted-theseus.png
 
 
 =================
