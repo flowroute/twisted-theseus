@@ -42,8 +42,12 @@ class Tracer(object):
         self._reactor = reactor
         self._deferreds = {}
         self._function_data = {}
+        self._wrapped_profiler = None
 
     def _trace(self, frame, event, arg):
+        if self._wrapped_profiler is not None:
+            self._wrapped_profiler(frame, event, arg)
+
         if event != 'return':
             return
 
@@ -118,8 +122,10 @@ class Tracer(object):
         Install this tracer as a global `profile hook
         <https://docs.python.org/2/library/sys.html#sys.setprofile>`_.
 
-        The old profile hook, if one is set, will be discarded.
+        The old profile hook, if one is set, will continue to be called by this
+        tracer.
         """
+        self._wrapped_profiler = sys.getprofile()
         sys.setprofile(self._trace)
 
     def uninstall(self):
@@ -127,10 +133,11 @@ class Tracer(object):
         Deactivate this tracer.
 
         If another profile hook was installed after this tracer was installed,
-        nothing will happen.
+        nothing will happen. If a different profile hook was installed prior to
+        calling ``install()``, it will be restored.
         """
         if sys.getprofile() == self._trace:
-            sys.setprofile(None)
+            sys.setprofile(self._wrapped_profiler)
 
     def write_data(self, fobj):
         """

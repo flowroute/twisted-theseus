@@ -62,8 +62,11 @@ The call stack according to theseus will look like this (most recent call last):
   twisted.internet.task in react
   __main__ in func
 
-Because theseus uses a `profile hook`_,
-it's not possible to have both cProfile and theseus enabled at the same time.
+While theseus and cProfile both use a `profile hook`_,
+as long as cProfile is installed first,
+both profilers can be used at the same time.
+In this case,
+calling ``uninstall()`` will restore cProfile.
 
 
 .. _Deferred: https://twistedmatrix.com/documents/current/core/howto/defer.html

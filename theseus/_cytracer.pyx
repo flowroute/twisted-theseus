@@ -22,6 +22,9 @@ cdef extern from "frameobject.h":
 
 class CythonTracer(Tracer):
     def _trace(self, FrameType frame, event, arg):
+        if self._wrapped_profiler is not None:
+            self._wrapped_profiler(frame, event, arg)
+
         if event != 'return':
             return
 

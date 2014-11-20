@@ -2,6 +2,7 @@ from cStringIO import StringIO
 import inspect
 import textwrap
 
+import pytest
 from twisted.internet import defer, task
 
 from theseus._tracer import Function, Tracer
@@ -202,38 +203,68 @@ class FakeSys(object):
         return self.tracer
 
 
-def test_tracer_install(monkeypatch):
+@pytest.fixture
+def fakesys(monkeypatch):
+    fakesys = FakeSys()
+    monkeypatch.setattr('theseus._tracer.sys', fakesys)
+    return fakesys
+
+
+def test_tracer_install(fakesys):
     """
     Tracer's install method will install itself globally using sys.setprofile.
     """
-    fakesys = FakeSys()
     t = Tracer()
-    monkeypatch.setattr('theseus._tracer.sys', fakesys)
     t.install()
     assert fakesys.tracer == t._trace
 
 
-def test_tracer_uninstall(monkeypatch):
+def test_tracer_wrapped_hook(fakesys):
+    """
+    If a profile hook was set prior to calling Tracer's install method, it will
+    continue to be called by Tracer.
+    """
+    calls = []
+
+    def tracer(frame, event, arg):
+        calls.append((frame, event, arg))
+    fakesys.tracer = tracer
+    t = Tracer()
+    t.install()
+    sentinel = object()
+    t._trace(sentinel, 'call', sentinel)
+    assert calls == [(sentinel, 'call', sentinel)]
+
+
+def test_tracer_uninstall(fakesys):
     """
     Tracer's install method will uninstall itself as well.
     """
-    fakesys = FakeSys()
     t = Tracer()
-    monkeypatch.setattr('theseus._tracer.sys', fakesys)
     t.install()
     t.uninstall()
     assert fakesys.tracer is None
 
 
-def test_tracer_uninstall_with_other_hook(monkeypatch):
+def test_tracer_uninstall_with_other_hook(fakesys):
     """
     If another profile hook was installed after the Tracer was installed, then
     the profile hook will remain unchanged.
     """
-    fakesys = FakeSys()
     t = Tracer()
-    monkeypatch.setattr('theseus._tracer.sys', fakesys)
     t.install()
     fakesys.tracer = sentinel = object()
+    t.uninstall()
+    assert fakesys.tracer is sentinel
+
+
+def test_tracer_uninstall_with_other_hook_previously_installed(fakesys):
+    """
+    If another profile hook was installed before the Tracer was installed, then
+    the profile hook will be restored to that profile hook.
+    """
+    t = Tracer()
+    fakesys.tracer = sentinel = object()
+    t.install()
     t.uninstall()
     assert fakesys.tracer is sentinel
