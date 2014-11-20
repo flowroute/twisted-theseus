@@ -37,6 +37,11 @@ The output is written in `callgrind format`_,
 which means that standard tools can be used to interpret the results,
 such as kcachegrind_.
 
+If at any point the ``Tracer`` is no longer useful,
+it can be uninstalled to stop tracing::
+
+  t.uninstall()
+
 Additionally,
 theseus is aware of inlineCallbacks_,
 and will rewrite call stacks to make them look "correct".

@@ -220,6 +220,9 @@ class FakeSys(object):
     def setprofile(self, trace):
         self.tracer = trace
 
+    def getprofile(self):
+        return self.tracer
+
 
 def test_tracer_install(monkeypatch):
     """
@@ -230,3 +233,29 @@ def test_tracer_install(monkeypatch):
     monkeypatch.setattr('theseus._tracer.sys', fakesys)
     t.install()
     assert fakesys.tracer == t._trace
+
+
+def test_tracer_uninstall(monkeypatch):
+    """
+    Tracer's install method will uninstall itself as well.
+    """
+    fakesys = FakeSys()
+    t = Tracer()
+    monkeypatch.setattr('theseus._tracer.sys', fakesys)
+    t.install()
+    t.uninstall()
+    assert fakesys.tracer is None
+
+
+def test_tracer_uninstall_with_other_hook(monkeypatch):
+    """
+    If another profile hook was installed after the Tracer was installed, then
+    the profile hook will remain unchanged.
+    """
+    fakesys = FakeSys()
+    t = Tracer()
+    monkeypatch.setattr('theseus._tracer.sys', fakesys)
+    t.install()
+    fakesys.tracer = sentinel = object()
+    t.uninstall()
+    assert fakesys.tracer is sentinel

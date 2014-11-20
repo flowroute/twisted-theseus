@@ -135,6 +135,16 @@ class Tracer(object):
         """
         sys.setprofile(self._trace)
 
+    def uninstall(self):
+        """
+        Deactivate this tracer.
+
+        If another profile hook was installed after this tracer was installed,
+        nothing will happen.
+        """
+        if sys.getprofile() == self._trace:
+            sys.setprofile(None)
+
     def write_data(self, fobj):
         """
         Write profiling data in `callgrind format
