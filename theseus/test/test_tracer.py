@@ -35,52 +35,6 @@ def test_function_of_frame():
     assert Function.of_frame(frame) == ('spam', 'eggs')
 
 
-def test_trace_normally():
-    """
-    Normally, a Tracer will return a local trace function for function call.
-    """
-    t = Tracer()
-    assert t._trace(FakeFrame(), 'call', None) == t._trace
-
-
-def test_trace_unknown_events():
-    """
-    Tracers will return a local trace function for unknown event types.
-    """
-    t = Tracer()
-    assert t._trace(FakeFrame(), 'unknown', None) == t._trace
-
-
-def test_ignore_generators():
-    """
-    A Tracer won't step into a generator function.
-    """
-    frame = FakeFrame(FakeCode(flags=inspect.CO_GENERATOR))
-    t = Tracer()
-    assert t._trace(frame, 'call', None) is None
-
-
-def test_ignore_defer():
-    """
-    A Tracer won't step into a function defined in twisted.internet.defer.
-    """
-    frame = FakeFrame(globals={'__name__': 'twisted.internet.defer'})
-    t = Tracer()
-    assert t._trace(frame, 'call', None) is None
-
-
-def test_trace_unwindGenerator():
-    """
-    The exception to ingoring twisted.internet.defer functions is if the
-    function's name is unwindGenerator.
-    """
-    frame = FakeFrame(
-        FakeCode(name='unwindGenerator'),
-        globals={'__name__': 'twisted.internet.defer'})
-    t = Tracer()
-    assert t._trace(frame, 'call', None) == t._trace
-
-
 def test_do_not_trace_non_deferred_returns():
     """
     If a function returns a non-Deferred value, nothing happens. More
@@ -88,6 +42,30 @@ def test_do_not_trace_non_deferred_returns():
     """
     t = Tracer()
     t._trace(FakeFrame(), 'return', None)
+    assert not t._function_data
+
+
+def test_do_not_trace_generators():
+    """
+    If a generator function returns a Deferred, nothing happens. More
+    specifically, no function trace information is stored.
+    """
+    t = Tracer()
+    t._trace(
+        FakeFrame(FakeCode(flags=inspect.CO_GENERATOR)),
+        'return', defer.Deferred())
+    assert not t._function_data
+
+
+def test_do_not_trace_defer_module():
+    """
+    If a function in twisted.internet.defer returns a Deferred, nothing
+    happens. More specifically, no function trace information is stored.
+    """
+    t = Tracer()
+    t._trace(
+        FakeFrame(globals={'__name__': 'twisted.internet.defer'}),
+        'return', defer.Deferred())
     assert not t._function_data
 
 

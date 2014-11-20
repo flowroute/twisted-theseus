@@ -14,7 +14,6 @@ DeferredStatus = collections.namedtuple(
 FunctionData = collections.namedtuple('FunctionData', ['calls', 'time'])
 FunctionCall = collections.namedtuple('FunctionCall', ['count', 'time'])
 EMPTY_CALL = FunctionCall(0, 0)
-IGNORE = object()
 
 
 class Function(collections.namedtuple('Function', ['filename', 'func'])):
@@ -44,49 +43,40 @@ class Tracer(object):
             from twisted.internet import reactor
         self._reactor = reactor
         self._deferreds = {}
-        self._unwindGenerator_frames = set()
         self._function_data = {}
 
     def _trace(self, frame, event, arg):
-        meth = getattr(self, '_event_' + event, None)
-        result = None
-        if meth is not None:
-            result = meth(frame, arg)
-        if result is not IGNORE:
-            return self._trace
+        if event != 'return':
+            return
 
-    def _event_call(self, frame, arg):
-        # Don't trace generators; inlineCallbacks is handled separately.
+        # Don't care about generators; inlineCallbacks is handled separately.
         if frame.f_code.co_flags & inspect.CO_GENERATOR:
-            return IGNORE
+            return
 
-        # Tracing functions from twisted.internet.defer adds a lot of noise, so
-        # don't do that.
-        if frame.f_globals.get('__name__') == 'twisted.internet.defer':
-            # The only exception to the above is unwindGenerator, an
-            # implementation detail of inlineCallbacks.
-            if frame.f_code.co_name == 'unwindGenerator':
-                self._unwindGenerator_frames.add(frame)
-            else:
-                return IGNORE
-
-    def _event_return(self, frame, arg):
+        # If it's not a deferred, we don't care either.
         if not isinstance(arg, defer.Deferred):
             return
-        # Detect when unwindGenerator returns. unwindGenerator is part of the
-        # inlineCallbacks implementation. If unwindGenerator is returning, it
-        # means that the Deferred being returned is the Deferred that will be
-        # returned from the wrapped function. Yank the wrapped function out and
-        # fake a call stack that makes it look like unwindGenerator isn't
-        # involved at all and the wrapped function is being called
-        # directly. This /does/ involve Twisted implementation details, but as
-        # far back as twisted 2.5.0 (when inlineCallbacks was introduced), the
-        # name 'unwindGenerator' and the local 'f' are the same. If this ever
-        # changes in the future, I'll have to update this code.
-        if frame in self._unwindGenerator_frames:
-            self._unwindGenerator_frames.remove(frame)
-            wrapped_func = frame.f_locals['f']
-            frame = FakeFrame(wrapped_func.func_code, frame.f_back)
+
+        # Tracing functions from twisted.internet.defer adds a lot of noise, so
+        # don't do that except for unwindGenerator.
+        if frame.f_globals.get('__name__') == 'twisted.internet.defer':
+            # Detect when unwindGenerator returns. unwindGenerator is part of
+            # the inlineCallbacks implementation. If unwindGenerator is
+            # returning, it means that the Deferred being returned is the
+            # Deferred that will be returned from the wrapped function. Yank
+            # the wrapped function out and fake a call stack that makes it look
+            # like unwindGenerator isn't involved at all and the wrapped
+            # function is being called directly. This /does/ involve Twisted
+            # implementation details, but as far back as twisted 2.5.0 (when
+            # inlineCallbacks was introduced), the name 'unwindGenerator' and
+            # the local 'f' are the same. If this ever changes in the future,
+            # I'll have to update this code.
+            if frame.f_code.co_name == 'unwindGenerator':
+                wrapped_func = frame.f_locals['f']
+                frame = FakeFrame(wrapped_func.func_code, frame.f_back)
+            else:
+                return
+
         key = frame, arg
         self._deferreds[key] = DeferredStatus(
             frame, arg, self._reactor.seconds())

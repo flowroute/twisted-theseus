@@ -21,25 +21,22 @@ cdef extern from "frameobject.h":
 
 
 class CythonTracer(Tracer):
-    def _trace(self, FrameType frame, event, arg):
-        if event == 'call':
-            # Don't trace generators; inlineCallbacks is handled separately.
-            if frame.f_code.co_flags & CO_GENERATOR:
-                return None
+    def _trace(self, frame, event, arg):
+        if event != 'return':
+            return
 
-            # Tracing functions from twisted.internet.defer adds a lot of
-            # noise, so don't do that.
-            if frame.f_globals.get('__name__') == 'twisted.internet.defer':
-                # The only exception to the above is unwindGenerator, an
-                # implementation detail of inlineCallbacks.
-                if frame.f_code.co_name == 'unwindGenerator':
-                    self._unwindGenerator_frames.add(frame)
-                else:
-                    return None
+        # Don't care about generators; inlineCallbacks is handled separately.
+        if frame.f_code.co_flags & inspect.CO_GENERATOR:
+            return
 
-        elif event == 'return':
-            if not isinstance(arg, defer.Deferred):
-                return
+        # If it's not a deferred, we don't care either.
+        if not isinstance(arg, defer.Deferred):
+            return
+
+        frame_obj = frame
+        # Tracing functions from twisted.internet.defer adds a lot of noise, so
+        # don't do that except for unwindGenerator.
+        if frame.f_globals.get('__name__') == 'twisted.internet.defer':
             # Detect when unwindGenerator returns. unwindGenerator is part of
             # the inlineCallbacks implementation. If unwindGenerator is
             # returning, it means that the Deferred being returned is the
@@ -51,16 +48,15 @@ class CythonTracer(Tracer):
             # inlineCallbacks was introduced), the name 'unwindGenerator' and
             # the local 'f' are the same. If this ever changes in the future,
             # I'll have to update this code.
-            frame_obj = frame
-            if frame in self._unwindGenerator_frames:
-                self._unwindGenerator_frames.remove(frame)
+            if frame.f_code.co_name == 'unwindGenerator':
                 wrapped_func = frame.f_locals['f']
                 frame_obj = FakeFrame(
                     wrapped_func.func_code,
                     None if frame.f_back is NULL else <object>frame.f_back)
-            key = frame_obj, arg
-            self._deferreds[key] = DeferredStatus(
-                frame, arg, self._reactor.seconds())
-            arg.addBoth(self._deferred_fired, key)
+            else:
+                return
 
-        return self._trace
+        key = frame, arg
+        self._deferreds[key] = DeferredStatus(
+            frame, arg, self._reactor.seconds())
+        arg.addBoth(self._deferred_fired, key)
