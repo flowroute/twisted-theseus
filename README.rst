@@ -57,8 +57,8 @@ The call stack according to theseus will look like this (most recent call last):
   twisted.internet.task in react
   __main__ in func
 
-Because theseus uses a `trace hook`_ instead of a `profile hook`_,
-it's possible to have both cProfile and theseus enabled at the same time.
+Because theseus uses a `profile hook`_,
+it's not possible to have both cProfile and theseus enabled at the same time.
 
 
 .. _Deferred: https://twistedmatrix.com/documents/current/core/howto/defer.html
@@ -66,5 +66,4 @@ it's possible to have both cProfile and theseus enabled at the same time.
 .. _callgrind format: http://valgrind.org/docs/manual/cl-format.html
 .. _kcachegrind: http://kcachegrind.sourceforge.net/html/Home.html
 .. _inlineCallbacks: http://twistedmatrix.com/documents/current/api/twisted.internet.defer.html#inlineCallbacks
-.. _trace hook: https://docs.python.org/2/library/sys.html#sys.settrace
 .. _profile hook: https://docs.python.org/2/library/sys.html#sys.setprofile

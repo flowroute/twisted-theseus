@@ -217,13 +217,13 @@ def test_tracer_calltree_output():
 class FakeSys(object):
     tracer = None
 
-    def settrace(self, trace):
+    def setprofile(self, trace):
         self.tracer = trace
 
 
 def test_tracer_install(monkeypatch):
     """
-    Tracer's install method will install itself globally using sys.settrace.
+    Tracer's install method will install itself globally using sys.setprofile.
     """
     fakesys = FakeSys()
     t = Tracer()

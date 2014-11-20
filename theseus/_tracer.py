@@ -128,12 +128,12 @@ class Tracer(object):
 
     def install(self):
         """
-        Install this tracer as a global `trace hook
-        <https://docs.python.org/2/library/sys.html#sys.settrace>`_.
+        Install this tracer as a global `profile hook
+        <https://docs.python.org/2/library/sys.html#sys.setprofile>`_.
 
-        The old trace hook, if one is set, will be discarded.
+        The old profile hook, if one is set, will be discarded.
         """
-        sys.settrace(self._trace)
+        sys.setprofile(self._trace)
 
     def write_data(self, fobj):
         """
