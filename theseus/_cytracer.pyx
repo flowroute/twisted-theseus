@@ -95,6 +95,11 @@ cdef class CythonTracer:
         self.prev_profilefunc = NULL
         self.wrapped_tracer = Tracer()
 
+    def __dealloc__(self):
+        cdef PyThreadState *thread_state = PyThreadState_GET()
+        if thread_state.c_profileobj == <PyObject *>self:
+            self.uninstall()
+
     def install(self):
         """
         Install this tracer as a global `profile hook
