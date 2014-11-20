@@ -117,10 +117,15 @@ cdef class CythonTracer:
         nothing will happen. If a different profile hook was installed prior to
         calling ``install()``, it will be restored.
         """
+        cdef PyThreadState *thread_state = PyThreadState_GET()
+        if thread_state.c_profileobj != <PyObject *>self:
+            return
         if self.prev_profilefunc is not NULL:
             PyEval_SetProfile(self.prev_profilefunc, <PyObject *>self.prev_profileobj)
         else:
             PyEval_SetProfile(NULL, NULL)
+        self.prev_profilefunc = NULL
+        self.prev_profileobj = None
 
     def write_data(self, fobj):
         """
