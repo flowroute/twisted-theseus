@@ -1,64 +1,112 @@
 # Copyright (c) Aaron Gallagher <_@habnab.it>
 # See COPYING for details.
 
+from cpython.ref cimport PyObject
 from twisted.internet import defer
 
 from theseus._tracer import FakeFrame, Tracer
 
 cdef extern from "code.h":
-    ctypedef class types.CodeType [object PyCodeObject]:
-        cdef int co_flags
-        cdef object co_name
+    ctypedef struct PyCodeObject:
+        int co_flags
+        PyObject *co_name
 
     int CO_GENERATOR
 
 cdef extern from "frameobject.h":
-    ctypedef class types.FrameType [object PyFrameObject]:
-        cdef object f_globals
-        cdef object f_locals
-        cdef void *f_back
-        cdef CodeType f_code
+    ctypedef struct PyFrameObject:
+        PyObject *f_globals
+        PyObject *f_locals
+        PyObject *f_back
+        PyCodeObject *f_code
+
+    void PyFrame_FastToLocals(PyFrameObject *)
+    void PyFrame_LocalsToFast(PyFrameObject *, int)
+
+cdef extern from "pystate.h":
+    ctypedef int (*Py_tracefunc)(PyObject *, PyFrameObject *, int, PyObject *) except -1
+
+    ctypedef struct PyThreadState:
+        Py_tracefunc c_profilefunc
+        PyObject *c_profileobj
+
+    PyThreadState *PyThreadState_GET()
+    int PyTrace_RETURN
+
+cdef extern from "ceval.h":
+    void PyEval_SetProfile(Py_tracefunc, PyObject *)
 
 
-class CythonTracer(Tracer):
-    def _trace(self, FrameType frame, event, arg):
-        if self._wrapped_profiler is not None:
-            self._wrapped_profiler(frame, event, arg)
+cdef int theseus_tracefunc(PyObject *_self, PyFrameObject *_frame, int event, PyObject *_arg) except -1:
+    cdef CythonTracer self = <CythonTracer>_self
+    cdef object arg = None if _arg is NULL else <object>_arg
+    cdef object frame = <object>_frame
+    if self.prev_profilefunc is not NULL:
+        self.prev_profilefunc(<PyObject *>self.prev_profileobj, _frame, event, _arg)
 
-        if event != 'return':
-            return
+    if event != PyTrace_RETURN:
+        return 0
 
-        # Don't care about generators; inlineCallbacks is handled separately.
-        if frame.f_code.co_flags & CO_GENERATOR:
-            return
+    # Don't care about generators; inlineCallbacks is handled separately.
+    if _frame.f_code.co_flags & CO_GENERATOR:
+        return 0
 
-        # If it's not a deferred, we don't care either.
-        if not isinstance(arg, defer.Deferred):
-            return
+    # If it's not a deferred, we don't care either.
+    if not isinstance(arg, defer.Deferred):
+        return 0
 
-        frame_obj = frame
-        # Tracing functions from twisted.internet.defer adds a lot of noise, so
-        # don't do that except for unwindGenerator.
-        if frame.f_globals.get('__name__') == 'twisted.internet.defer':
-            # Detect when unwindGenerator returns. unwindGenerator is part of
-            # the inlineCallbacks implementation. If unwindGenerator is
-            # returning, it means that the Deferred being returned is the
-            # Deferred that will be returned from the wrapped function. Yank
-            # the wrapped function out and fake a call stack that makes it look
-            # like unwindGenerator isn't involved at all and the wrapped
-            # function is being called directly. This /does/ involve Twisted
-            # implementation details, but as far back as twisted 2.5.0 (when
-            # inlineCallbacks was introduced), the name 'unwindGenerator' and
-            # the local 'f' are the same. If this ever changes in the future,
-            # I'll have to update this code.
-            if frame.f_code.co_name == 'unwindGenerator':
-                wrapped_func = frame.f_locals['f']
-                frame_obj = FakeFrame(
-                    wrapped_func.func_code,
-                    None if frame.f_back is NULL else <object>frame.f_back)
-            else:
-                return
+    # Tracing functions from twisted.internet.defer adds a lot of noise, so
+    # don't do that except for unwindGenerator.
+    if (<object>_frame.f_globals).get('__name__') == 'twisted.internet.defer':
+        # Detect when unwindGenerator returns. unwindGenerator is part of the
+        # inlineCallbacks implementation. If unwindGenerator is returning, it
+        # means that the Deferred being returned is the Deferred that will be
+        # returned from the wrapped function. Yank the wrapped function out and
+        # fake a call stack that makes it look like unwindGenerator isn't
+        # involved at all and the wrapped function is being called
+        # directly. This /does/ involve Twisted implementation details, but as
+        # far back as twisted 2.5.0 (when inlineCallbacks was introduced), the
+        # name 'unwindGenerator' and the local 'f' are the same. If this ever
+        # changes in the future, I'll have to update this code.
+        if (<object>_frame.f_code.co_name) == 'unwindGenerator':
+            PyFrame_FastToLocals(_frame)
+            try:
+                wrapped_func = (<object>_frame.f_locals)['f']
+            finally:
+                PyFrame_LocalsToFast(_frame, 1)
+            frame = FakeFrame(
+                wrapped_func.func_code,
+                None if _frame.f_back is NULL else <object>_frame.f_back)
+        else:
+            return 0
 
-        key = frame_obj, arg
-        self._deferreds[key] = self._reactor.seconds()
-        arg.addBoth(self._deferred_fired, key)
+    key = frame, arg
+    self.wrapped_tracer._deferreds[key] = self.wrapped_tracer._reactor.seconds()
+    arg.addBoth(self.wrapped_tracer._deferred_fired, key)
+    return 0
+
+
+cdef class CythonTracer:
+    cdef Py_tracefunc prev_profilefunc
+    cdef object prev_profileobj
+    cdef object wrapped_tracer
+
+    def __cinit__(self):
+        self.prev_profilefunc = NULL
+        self.wrapped_tracer = Tracer()
+
+    def install(self):
+        cdef PyThreadState *thread_state = PyThreadState_GET()
+        if thread_state.c_profilefunc is not NULL:
+            self.prev_profilefunc = thread_state.c_profilefunc
+            self.prev_profileobj = <object>thread_state.c_profileobj
+        PyEval_SetProfile(theseus_tracefunc, <PyObject *>self)
+
+    def uninstall(self):
+        if self.prev_profilefunc is not NULL:
+            PyEval_SetProfile(self.prev_profilefunc, <PyObject *>self.prev_profileobj)
+        else:
+            PyEval_SetProfile(NULL, NULL)
+
+    def write_data(self, fobj):
+        self.wrapped_tracer.write_data(fobj)

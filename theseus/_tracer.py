@@ -2,6 +2,7 @@
 # See COPYING for details.
 
 import collections
+import cProfile
 import inspect
 import sys
 
@@ -125,7 +126,13 @@ class Tracer(object):
         The old profile hook, if one is set, will continue to be called by this
         tracer.
         """
-        self._wrapped_profiler = sys.getprofile()
+        extant_profiler = sys.getprofile()
+        if isinstance(extant_profiler, cProfile.Profile):
+            raise RuntimeError(
+                "the pure-python Tracer is unable to compose over cProfile's "
+                "profile function; you must disable cProfile before "
+                "installing this Tracer.")
+        self._wrapped_profiler = extant_profiler
         sys.setprofile(self._trace)
 
     def uninstall(self):
