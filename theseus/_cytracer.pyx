@@ -3,7 +3,7 @@
 
 from twisted.internet import defer
 
-from theseus._tracer import DeferredStatus, FakeFrame, Tracer
+from theseus._tracer import FakeFrame, Tracer
 
 cdef extern from "code.h":
     ctypedef class types.CodeType [object PyCodeObject]:
@@ -21,12 +21,12 @@ cdef extern from "frameobject.h":
 
 
 class CythonTracer(Tracer):
-    def _trace(self, frame, event, arg):
+    def _trace(self, FrameType frame, event, arg):
         if event != 'return':
             return
 
         # Don't care about generators; inlineCallbacks is handled separately.
-        if frame.f_code.co_flags & inspect.CO_GENERATOR:
+        if frame.f_code.co_flags & CO_GENERATOR:
             return
 
         # If it's not a deferred, we don't care either.
@@ -56,7 +56,6 @@ class CythonTracer(Tracer):
             else:
                 return
 
-        key = frame, arg
-        self._deferreds[key] = DeferredStatus(
-            frame, arg, self._reactor.seconds())
+        key = frame_obj, arg
+        self._deferreds[key] = self._reactor.seconds()
         arg.addBoth(self._deferred_fired, key)

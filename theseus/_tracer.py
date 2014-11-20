@@ -9,8 +9,6 @@ from twisted.internet import defer
 from twisted.python import log
 
 
-DeferredStatus = collections.namedtuple(
-    'DeferredStatus', ['frame', 'deferred', 'returned_at'])
 FunctionData = collections.namedtuple('FunctionData', ['calls', 'time'])
 FunctionCall = collections.namedtuple('FunctionCall', ['count', 'time'])
 EMPTY_CALL = FunctionCall(0, 0)
@@ -78,8 +76,7 @@ class Tracer(object):
                 return
 
         key = frame, arg
-        self._deferreds[key] = DeferredStatus(
-            frame, arg, self._reactor.seconds())
+        self._deferreds[key] = self._reactor.seconds()
         arg.addBoth(self._deferred_fired, key)
 
     def _get_function(self, frame):
@@ -91,10 +88,10 @@ class Tracer(object):
 
     def _deferred_fired(self, result, key):
         fired_at = self._reactor.seconds()
-        status = self._deferreds.pop(key, None)
-        if status is None:
+        returned_at = self._deferreds.pop(key, None)
+        if returned_at is None:
             return
-        delta = int((fired_at - status.returned_at) * 1000000)
+        delta = int((fired_at - returned_at) * 1000000)
         frame, _ = key
         try:
             self._record_timing(delta, frame)
