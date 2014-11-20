@@ -96,6 +96,13 @@ cdef class CythonTracer:
         self.wrapped_tracer = Tracer()
 
     def install(self):
+        """
+        Install this tracer as a global `profile hook
+        <https://docs.python.org/2/library/sys.html#sys.setprofile>`_.
+
+        The old profile hook, if one is set, will continue to be called by this
+        tracer.
+        """
         cdef PyThreadState *thread_state = PyThreadState_GET()
         if thread_state.c_profilefunc is not NULL:
             self.prev_profilefunc = thread_state.c_profilefunc
@@ -103,10 +110,24 @@ cdef class CythonTracer:
         PyEval_SetProfile(theseus_tracefunc, <PyObject *>self)
 
     def uninstall(self):
+        """
+        Deactivate this tracer.
+
+        If another profile hook was installed after this tracer was installed,
+        nothing will happen. If a different profile hook was installed prior to
+        calling ``install()``, it will be restored.
+        """
         if self.prev_profilefunc is not NULL:
             PyEval_SetProfile(self.prev_profilefunc, <PyObject *>self.prev_profileobj)
         else:
             PyEval_SetProfile(NULL, NULL)
 
     def write_data(self, fobj):
+        """
+        Write profiling data in `callgrind format
+        <http://valgrind.org/docs/manual/cl-format.html>`_ to an open file
+        object.
+
+        The file object will not be closed.
+        """
         self.wrapped_tracer.write_data(fobj)
