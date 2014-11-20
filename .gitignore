@@ -4,6 +4,8 @@
 /.eggs
 /.tox
 /theseus/_version.py
+/theseus/_cytracer.c
+/theseus/_cytracer.so
 /version.txt
 /htmlcov*
 *.egg
