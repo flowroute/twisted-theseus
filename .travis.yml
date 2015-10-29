@@ -12,3 +12,9 @@ matrix:
 install:
   - "pip install tox"
 script: "tox -- -rs"
+after_success:
+  - "tox -e codecov"
+
+notifications:
+  slack:
+    secure: I3h3MhMtQWt/hYwZ1zHrN9fZ/rJGXeusF1ZOoDmoO06+dofYiF2hiJvcIXWToaYKxilANH7iJaxIl66ywe0bbWYpuHJP11tLo5DMIGmRviL6IpYf6Hw3i212mcGd3cdo5yPdszYL5QXxPDjgKMZj66NFMYHInmUcibdcZx2QfmQ=
