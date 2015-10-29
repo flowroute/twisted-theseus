@@ -4,23 +4,26 @@
 from __future__ import print_function
 
 from distutils.command.build_ext import build_ext
+import platform
 import sys
 
 from setuptools import Extension, setup
 
 
-speedups = Extension('theseus._cytracer', [])
-ext_modules = [speedups]
-try:
-    from Cython.Distutils import build_ext
-except ImportError:
-    import traceback
-    print('** WARNING: Cython not found: **', file=sys.stderr)
-    traceback.print_exc()
-    print('** END WARNING **', file=sys.stderr)
-    speedups.sources.append('theseus/_cytracer.c')
-else:
-    speedups.sources.append('theseus/_cytracer.pyx')
+ext_modules = []
+if platform.python_implementation() == 'CPython':
+    speedups = Extension('theseus._cytracer', [])
+    try:
+        from Cython.Distutils import build_ext
+    except ImportError:
+        import traceback
+        print('** WARNING: Cython not found: **', file=sys.stderr)
+        traceback.print_exc()
+        print('** END WARNING **', file=sys.stderr)
+        speedups.sources.append('theseus/_cytracer.c')
+    else:
+        speedups.sources.append('theseus/_cytracer.pyx')
+    ext_modules.append(speedups)
 
 
 with open('README.rst', 'r') as infile:
